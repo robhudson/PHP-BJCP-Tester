@@ -1,0 +1,249 @@
+<?
+srand((float)microtime()*1000000);
+
+if (empty($totest))
+{
+  $submit = 'Next';
+
+  $totest = array();
+  $sql = "
+    SELECT cat,subcat
+    FROM bjcp
+    WHERE 
+      cat < '24' AND cat != '21' AND cat != '22' AND ( cat != '23' AND subcat != 'A' )
+    ORDER BY RAND()
+    LIMIT 10
+  ";
+  $res = mysql_query($sql);
+  while ($row = mysql_fetch_assoc($res))
+  {
+    $totest[] = $row['cat'] . $row['subcat'];
+  }
+
+  $totest = base64_encode(serialize($totest));
+
+  $num_correct = 0;
+  $tostudy = array();
+  $tostudy = base64_encode(serialize($tostudy));
+  $didgood = array();
+  $didgood = base64_encode(serialize($didgood));
+}
+
+if ($submit == 'Next')
+{
+  if (!empty($totest))
+  {
+    $totest = unserialize(base64_decode($totest));
+    if (empty($totest))
+    {
+      $overall = ($num_correct/50) * 100;
+      if ($overall == 100) {
+        $comment = 'Perfect Score!';
+      } elseif ($overall >= 80) {
+        $comment = 'Good Job';
+      } elseif ($overall >= 60) {
+        $comment = 'Not bad (aka Didn\'t suck)';
+      } elseif ($overall >= 40) {
+        $comment = 'Need to study.';
+      } elseif ($overall < 40) {
+        $comment = 'Ever heard of the BJCP?';
+      }
+
+      $tostudy = unserialize(base64_decode($tostudy));
+      $didgood = unserialize(base64_decode($didgood));
+
+      echo '<p>That was the last of your randomly chosen 10 BJCP categories.';
+      echo '<p><b>Your Overall Score: ' . number_format($overall, 0) . '%</b> ('.$comment.')</p>';
+      if (count($didgood) > 0)
+      {
+        echo '<p>The styles you did well on (80% or better) were:<ul>';
+        foreach ($didgood as $title)
+        {
+          echo '<li>' . $title . '</li>';
+        }
+        echo '</ul></p>';
+      }
+      if (count($tostudy) > 0)
+      {
+        echo '<p>The styles you need to study up on (40% or less) are:<ul>';
+        foreach ($tostudy as $title)
+        {
+          echo '<li>' . $title . '</li>';
+        }
+        echo '</ul></p>';
+      }
+      echo '<p>Now, you can...</p><ul>';
+      echo '<li><a href="/bjcp/test-styles.html">Get another 10!</a></li>';
+      echo '<li>Go relax and have a beer</li>';
+      echo '<li>If you have feedback on how I can make this test better, <a href="/feedback/">let me know</a>.  Thanks.</li>';
+      echo '</ul></p>';
+      show_foot();
+      exit();
+    }
+    $num = count($totest);
+    $category = array_shift($totest);
+    $bjcp_style = array();
+    preg_match("/([0-9]{2})([A-Z]?)/", $category, $bjcp_style);
+    $bjcp_cat = $bjcp_style[1];
+    $bjcp_subcat = $bjcp_style[2];
+    $style_specs = mysql_fetch_assoc(mysql_query("SELECT style, substyle, og_min,og_max, fg_min, fg_max, ibu_min, ibu_max, srm_min, srm_max, alc_min, alc_max FROM bjcp WHERE cat='$bjcp_cat' AND subcat='$bjcp_subcat'"));
+    $style = $style_specs['style'];
+    $substyle = $style_specs['substyle'];
+    $bjcp_print = $category . ". " . $style;
+    if (!empty($substyle))
+    {
+      $bjcp_print .= ", $substyle";
+    }
+
+    ?>
+    <p>#<?= $num ?>) Choose the appropriate range for the following style...</p>
+    <p><b><?= $bjcp_print ?></b></p>
+    <form method="post">
+    <table cellpadding="3">
+    <?
+      // What to get
+      $get = array('OG' => 'og', 'FG' => 'fg', 'SRM' => 'srm', 'IBU' => 'ibu', 'ABV' => 'alc');
+      foreach ($get as $title => $spec)
+      {
+        echo '<tr><td bgcolor="#dddddd"><b>'.$title.'</b></td>';
+
+        // Get 2 random <spec>'s 
+        $min = $spec . '_min';
+        $max = $spec . '_max';
+        $specs = array( (empty($style_specs[$min])?'':$style_specs[$min].'-') . $style_specs[$max]);
+        // TODO: Update to not be able to grab 2 of the same specs in this query.
+        // If so, answer is a little obvious ;)
+        $sql = "
+          SELECT cat, subcat, $min, $max
+          FROM bjcp 
+          WHERE $min <> '' AND $max <> '' AND 
+            $min <> '".$style_specs[$min]."' AND 
+            $max <> '".$style_specs[$max]."'
+          ORDER BY RAND()
+          LIMIT 2
+        ";
+        $res = mysql_query($sql);
+        echo "\n<!-- $sql | " . mysql_error() . " -->\n";
+        while ($row = mysql_fetch_assoc($res))
+        {
+          echo "\n<!-- $row[cat], $row[subcat], $row[$min], $row[$max] -->";
+          $specs[] = (empty($row[$min]) ? '' : $row[$min].'-') . $row[$max];
+        }
+        shuffle($specs);
+        foreach ($specs as $key => $val)
+        {
+          echo '<td>';
+          echo '<input id="'.$spec.$key.'" type="radio" name="'.$spec.'" value="'.$val.'" />';
+          echo '<label for="'.$spec.$key.'">'.$val.'</label>';
+          echo '<input type="hidden" name="'.$spec.$key.'" value="'.$val.'" />';
+          echo '</td>'."\n";
+        }
+        echo '</tr>';
+      }
+    ?>
+    </table>
+    <p>
+    <input type="hidden" name="totest" value="<?= base64_encode(serialize($totest)) ?>">
+    <input type="hidden" name="tostudy" value="<?= $tostudy ?>">
+    <input type="hidden" name="didgood" value="<?= $didgood ?>">
+    <input type="hidden" name="category" value="<?= $category ?>">
+    <input type="hidden" name="num_correct" value="<?= $num_correct ?>">
+    <input type="submit" name="submit" value="Submit">
+    </p>
+    </form>
+    <?
+
+  }
+}
+else
+{
+  // Analyze
+  $bjcp_style = array();
+  preg_match("/([0-9]{2})([A-Z]?)/", $category, $bjcp_style);
+  $bjcp_cat = $bjcp_style[1];
+  $bjcp_subcat = $bjcp_style[2];
+  $style_specs = mysql_fetch_assoc(mysql_query("SELECT style, substyle, og_min,og_max, fg_min, fg_max, ibu_min, ibu_max, srm_min, srm_max, alc_min, alc_max FROM bjcp WHERE cat='$bjcp_cat' AND subcat='$bjcp_subcat'"));
+  $style = $style_specs['style'];
+  $substyle = $style_specs['substyle'];
+  $bjcp_print = $category . ". " . $style;
+  if (!empty($substyle))
+  {
+    $bjcp_print .= ", $substyle";
+  }
+  $tostudy = unserialize(base64_decode($tostudy));
+  $didgood = unserialize(base64_decode($didgood));
+
+  ?>
+  <p>Chosen answers are outlined.  The correct choice is in green. </p>
+  <p><b><?= $bjcp_print ?></b></p>
+  <table cellpadding="3">
+  <?
+    $get = array('OG' => 'og', 'FG' => 'fg', 'SRM' => 'srm', 'IBU' => 'ibu', 'ABV' => 'alc');
+    $this_correct = 0;
+    foreach ($get as $title => $spec)
+    {
+      echo '<tr><td bgcolor="#dddddd"><b>'.$title.'</b></td>';
+      for ($i = 0; $i <3 ; $i++)
+      {
+        $min = $spec . '_min';
+        $max = $spec . '_max';
+        $this_style = $spec . $i;
+        $chosen = $spec;
+        $correct = (empty($style_specs[$min]) ? '' : $style_specs[$min].'-') . $style_specs[$max];
+
+        if ($$this_style == $$chosen)
+        {
+          if ($correct == $$chosen)
+          {
+            $this_correct++;
+            echo '<td bgcolor="#aaccaa" style="border: 1px solid #000;">';
+          }
+          else
+          {
+            echo '<td style="border: 1px solid #900;">';
+          }
+        }
+        else
+        {
+          if ($$this_style == $correct)
+          {
+            echo '<td bgcolor="#aaccaa">';
+          }
+          else
+          {
+            echo '<td>';
+          }
+        }
+        echo $$this_style . '</td>';
+      }
+      echo '</tr>';
+    }
+  ?>
+  </table>
+  <p>
+  <?
+    $score = ($this_correct/5)*100;
+    if ($score <= 40)
+    {
+      $tostudy[] = $bjcp_print;
+    }
+    if ($score >= 80)
+    {
+      $didgood[] = $bjcp_print;
+    }
+    echo '<b>Score: ' . number_format($score,0) . '%</b>';
+  ?>
+  </p>
+  <p>
+  <form method="post">
+  <input type="hidden" name="totest" value="<?= $totest ?>">
+  <input type="hidden" name="tostudy" value="<?= base64_encode(serialize($tostudy)) ?>">
+  <input type="hidden" name="didgood" value="<?= base64_encode(serialize($didgood)) ?>">
+  <input type="hidden" name="num_correct" value="<?= $num_correct + $this_correct ?>">
+  <input type="submit" name="submit" value="Next">
+  </form>
+  </p>
+
+  <?
+}
+?>
